@@ -43,6 +43,12 @@ class LruNode {
   // Setters
   void setValue(const Value &value) { value_ = value; }
 
+  ~LruNode() {
+	  std::cout << key_ << " " << "LruNode destructed" << std::endl;
+	  prev_ = nullptr;
+	  next_ = nullptr;
+  }
+
  private:
   Key key_;
   Value value_;
@@ -51,13 +57,19 @@ class LruNode {
 };
 
 template<typename Key, typename Value>
-class LRU : CachePolicy<Key, Value> {
+class LRU : public CachePolicy<Key, Value> {
  public:
   using NodeTyp = LruNode<Key, Value>;
   using NodePtr = std::shared_ptr<NodeTyp>;
   using NodeMap = std::unordered_map<Key, NodePtr>;
 
   explicit LRU(int capacity) : capacity_(capacity) { init(); }
+
+  ~LRU() {
+	  dummyHead_->next_ = nullptr;
+	  dummyTail_->prev_ = nullptr;
+	  clearMap();
+  }
 
   void put(Key key, Value value) override {
 	  // 如果存在，更新节点值, 并移到头部
@@ -72,7 +84,7 @@ class LRU : CachePolicy<Key, Value> {
 		  cacheLastNode();
 	  }
 	  // 头部插入节点
-	  addHeadNode(key,value);
+	  addHeadNode(key, value);
   }
 
   std::optional<Value> get(Key key) override {
@@ -104,6 +116,14 @@ class LRU : CachePolicy<Key, Value> {
 	  dummyTail_->prev_ = dummyHead_;
   }
 
+  void clearMap() {
+	  std::cout << "clearMap" << std::endl;
+	  for (auto &pair : nodeMap_) {
+		  pair.second.reset(); // 先释放智能指针
+	  }
+	  nodeMap_.clear(); // 然后清空 map
+  }
+
   void moveToHead(NodePtr node) {
 	  removeNode(node);
 	  insertNode(node);
@@ -115,29 +135,29 @@ class LRU : CachePolicy<Key, Value> {
   }
 
   void insertNode(NodePtr node) {
-	  auto tailPrev = dummyTail_->prev_;
-	  node->prev_ = tailPrev;
-	  node->next_ = dummyTail_;
-	  dummyTail_->prev_ = node;
+	  node->next_ = dummyHead_->next_;
+	  dummyHead_->next_->prev_ = node;
+	  dummyHead_->next_ = node;
+	  node->prev_ = dummyHead_;
   }
 
-  void cacheLastNode(){
+  void cacheLastNode() {
 	  auto node = dummyTail_->prev_;
-	  removeNode(node);
 	  nodeMap_.erase(node->key());
+	  removeNode(node);
   }
 
-  void addHeadNode(Key key,Value value){
+  void addHeadNode(Key key, Value value) {
 	  auto newNode = std::make_shared<NodeTyp>(key, value);
 	  insertNode(newNode);
 	  nodeMap_[key] = newNode;
   }
 
  private:
-  int capacity_;        // 缓存容量，超过容量触发淘汰机制
-  NodePtr dummyHead_;    // 虚拟头结点
-  NodePtr dummyTail_;    // 虚拟尾结点
-  NodeMap nodeMap_;        // 目的：查询 key 的时间复杂度为 O(1)
+  int capacity_;            // 缓存容量，超过容量触发淘汰机制
+  NodePtr dummyHead_;        // 虚拟头结点
+  NodePtr dummyTail_;        // 虚拟尾结点
+  NodeMap nodeMap_;            // 目的：查询 key 的时间复杂度为 O(1)
 };
 
 }

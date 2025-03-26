@@ -60,8 +60,12 @@ void testGetByReference() {
 }
 
 int main() {
+	std::cout << "-------------------" << std::endl;
 	testBasicOperations();
+	std::cout << "-------------------" << std::endl;
 	testEvictionPolicy();
+	std::cout << "-------------------" << std::endl;
 	testGetByReference();
+	std::cout << "-------------------" << std::endl;
 	return 0;
 }
