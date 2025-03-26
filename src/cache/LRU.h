@@ -44,7 +44,6 @@ class LruNode {
   void setValue(const Value &value) { value_ = value; }
 
   ~LruNode() {
-	  std::cout << key_ << " " << "LruNode destructed" << std::endl;
 	  prev_ = nullptr;
 	  next_ = nullptr;
   }
@@ -59,16 +58,16 @@ class LruNode {
 template<typename Key, typename Value>
 class LRU : public CachePolicy<Key, Value> {
  public:
-  using NodeTyp = LruNode<Key, Value>;
-  using NodePtr = std::shared_ptr<NodeTyp>;
+  using NodeType = LruNode<Key, Value>;
+  using NodePtr = std::shared_ptr<NodeType>;
   using NodeMap = std::unordered_map<Key, NodePtr>;
 
   explicit LRU(int capacity) : capacity_(capacity) { init(); }
 
   ~LRU() {
+	  clearMap();
 	  dummyHead_->next_ = nullptr;
 	  dummyTail_->prev_ = nullptr;
-	  clearMap();
   }
 
   void put(Key key, Value value) override {
@@ -110,18 +109,19 @@ class LRU : public CachePolicy<Key, Value> {
 
  private:
   void init() {
-	  dummyHead_ = std::make_shared<NodeTyp>(Key(), Value());
-	  dummyTail_ = std::make_shared<NodeTyp>(Key(), Value());
+	  dummyHead_ = std::make_shared<NodeType>(Key(), Value());
+	  dummyTail_ = std::make_shared<NodeType>(Key(), Value());
 	  dummyHead_->next_ = dummyTail_;
 	  dummyTail_->prev_ = dummyHead_;
   }
 
   void clearMap() {
-	  std::cout << "clearMap" << std::endl;
-	  for (auto &pair : nodeMap_) {
-		  pair.second.reset(); // 先释放智能指针
+	  while (dummyHead_->next_ != dummyTail_) {
+		  auto node = dummyHead_->next_;
+		  removeNode(node);
+		  nodeMap_.erase(node->key());
 	  }
-	  nodeMap_.clear(); // 然后清空 map
+	  nodeMap_.clear();
   }
 
   void moveToHead(NodePtr node) {
@@ -148,7 +148,7 @@ class LRU : public CachePolicy<Key, Value> {
   }
 
   void addHeadNode(Key key, Value value) {
-	  auto newNode = std::make_shared<NodeTyp>(key, value);
+	  auto newNode = std::make_shared<NodeType>(key, value);
 	  insertNode(newNode);
 	  nodeMap_[key] = newNode;
   }

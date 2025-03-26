@@ -1,6 +1,40 @@
 #include <iostream>
-#include <optional>
+#include <chrono>
+#include <random>
 #include "LRU.h"
+
+// 性能测试函数
+void performanceTest(int capacity, int insertCount, int queryCount) {
+	Cache::LRU<int, int> lru(capacity);
+
+	// 随机数生成器
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::uniform_int_distribution<> dis(1, 1000000);
+
+	// 插入操作性能测试
+	auto startInsert = std::chrono::high_resolution_clock::now();
+	for (int i = 0; i < insertCount; ++i) {
+		int key = dis(gen);
+		int value = dis(gen);
+		lru.put(key, value);
+	}
+	auto endInsert = std::chrono::high_resolution_clock::now();
+	auto insertDuration = std::chrono::duration_cast<std::chrono::milliseconds>(endInsert - startInsert).count();
+
+	// 查询操作性能测试
+	auto startQuery = std::chrono::high_resolution_clock::now();
+	for (int i = 0; i < queryCount; ++i) {
+		int key = dis(gen);
+		lru.get(key);
+	}
+	auto endQuery = std::chrono::high_resolution_clock::now();
+	auto queryDuration = std::chrono::duration_cast<std::chrono::milliseconds>(endQuery - startQuery).count();
+
+	// 输出测试结果
+	std::cout << "插入 " << insertCount << " 次操作耗时: " << insertDuration << " 毫秒" << std::endl;
+	std::cout << "查询 " << queryCount << " 次操作耗时: " << queryDuration << " 毫秒" << std::endl;
+}
 
 using namespace Cache;
 
@@ -67,5 +101,6 @@ int main() {
 	std::cout << "-------------------" << std::endl;
 	testGetByReference();
 	std::cout << "-------------------" << std::endl;
+	performanceTest(10000,100000,50000);
 	return 0;
 }
