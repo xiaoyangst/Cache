@@ -2,7 +2,7 @@
   ******************************************************************************
   * @file           : LFU.h
   * @author         : xy
-  * @brief          : LRU
+  * @brief          : LRU cache
   * @attention      : None
   * @date           : 2025/3/26
   ******************************************************************************
@@ -26,8 +26,11 @@ namespace Cache {
 template<typename Key, typename Value>
 class LRU;
 template<typename Key, typename Value>
+class LRUCache;
+template<typename Key, typename Value>
 class LruNode {
   friend class LRU<Key, Value>;
+  friend class LRUCache<Key, Value>;
  public:
   LruNode(Key key, Value value)
 	  : key_(key),
@@ -62,13 +65,24 @@ class LRU : public CachePolicy<Key, Value> {
   using NodePtr = std::shared_ptr<NodeType>;
   using NodeMap = std::unordered_map<Key, NodePtr>;
 
-  explicit LRU(int capacity) : capacity_(capacity) { init(); }
+  explicit LRU(size_t capacity) : capacity_(capacity) { init(); }
 
   ~LRU() {
+	  // std::cout << "LRU destructor" << std::endl;
 	  clearMap();
 	  dummyHead_->next_ = nullptr;
 	  dummyTail_->prev_ = nullptr;
   }
+
+  void Print() {
+	  NodePtr cur = dummyHead_->next_;
+	  while (cur != dummyTail_) {
+		  std::cout << "key: " << cur->key() << " value: " << cur->value() << std::endl;
+		  cur = cur->next_;
+	  }
+  }
+
+  NodeMap &nodeMap() { return nodeMap_; }
 
   void put(Key key, Value value) override {
 	  // 如果存在，更新节点值, 并移到头部
@@ -154,7 +168,7 @@ class LRU : public CachePolicy<Key, Value> {
   }
 
  private:
-  int capacity_;            // 缓存容量，超过容量触发淘汰机制
+  size_t capacity_;            // 缓存容量，超过容量触发淘汰机制
   NodePtr dummyHead_;        // 虚拟头结点
   NodePtr dummyTail_;        // 虚拟尾结点
   NodeMap nodeMap_;            // 目的：查询 key 的时间复杂度为 O(1)
