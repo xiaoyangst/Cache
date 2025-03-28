@@ -11,40 +11,32 @@
 #ifndef CACHE_SRC_CACHE_LRU_H_
 #define CACHE_SRC_CACHE_LRU_H_
 
+#include <iostream>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 #include "CachePolicy.h"
 
 namespace Cache {
 
-/**
- * @brief 节点定义
- * @tparam Key
- * @tparam Value
- */
 template<typename Key, typename Value>
 class LRU;
 template<typename Key, typename Value>
 class LRUCache;
+
+/**
+ * @brief Node
+ * @tparam Key
+ * @tparam Value
+ */
 template<typename Key, typename Value>
 class LruNode {
   friend class LRU<Key, Value>;
   friend class LRUCache<Key, Value>;
  public:
   LruNode(Key key, Value value)
-	  : key_(key),
-		value_(value),
-		prev_(nullptr),
-		next_(nullptr) {}
-
-  // Getters
-  Key key() const { return key_; }
-
-  Value value() const { return value_; }
-
-  // Setters
-  void setValue(const Value &value) { value_ = value; }
+	  : key_(key), value_(value), count_(0), prev_(nullptr), next_(nullptr) {}
 
   ~LruNode() {
 	  prev_ = nullptr;
@@ -54,10 +46,16 @@ class LruNode {
  private:
   Key key_;
   Value value_;
+  size_t count_;    // 缓存被访问次数
   std::shared_ptr<LruNode<Key, Value>> prev_;
   std::shared_ptr<LruNode<Key, Value>> next_;
 };
 
+/**
+ * @brief LRU
+ * @tparam Key
+ * @tparam Value
+ */
 template<typename Key, typename Value>
 class LRU : public CachePolicy<Key, Value> {
  public:
@@ -65,10 +63,9 @@ class LRU : public CachePolicy<Key, Value> {
   using NodePtr = std::shared_ptr<NodeType>;
   using NodeMap = std::unordered_map<Key, NodePtr>;
 
-  explicit LRU(size_t capacity) : capacity_(capacity) { init(); }
+  explicit LRU(size_t capacity = 1) : capacity_(capacity) { init(); }
 
   ~LRU() {
-	  // std::cout << "LRU destructor" << std::endl;
 	  clearMap();
 	  dummyHead_->next_ = nullptr;
 	  dummyTail_->prev_ = nullptr;
@@ -88,7 +85,7 @@ class LRU : public CachePolicy<Key, Value> {
 	  // 如果存在，更新节点值, 并移到头部
 	  auto it = nodeMap_.find(key);
 	  if (it != nodeMap_.end()) {
-		  it->second->setValue(value);
+		  it->second->value_ = value;
 		  moveToHead(it->second);
 		  return;
 	  }
@@ -105,10 +102,11 @@ class LRU : public CachePolicy<Key, Value> {
 	  if (it == nodeMap_.end()) {
 		  return std::nullopt;
 	  }
+	  it->second->count_++;
 	  // 节点存在，更新到头部
 	  moveToHead(it->second);
 	  // 返回节点值
-	  return it->second->value();
+	  return it->second->value_;
   }
 
   bool get(Key key, Value &value) override {
@@ -116,8 +114,9 @@ class LRU : public CachePolicy<Key, Value> {
 	  if (it == nodeMap_.end()) {
 		  return false;
 	  }
+	  it->second->count_++;
 	  moveToHead(it->second);
-	  value = it->second->value();
+	  value = it->second->value_;
 	  return true;
   }
 
@@ -133,7 +132,7 @@ class LRU : public CachePolicy<Key, Value> {
 	  while (dummyHead_->next_ != dummyTail_) {
 		  auto node = dummyHead_->next_;
 		  removeNode(node);
-		  nodeMap_.erase(node->key());
+		  nodeMap_.erase(node->key_);
 	  }
 	  nodeMap_.clear();
   }
@@ -146,6 +145,8 @@ class LRU : public CachePolicy<Key, Value> {
   void removeNode(NodePtr node) {
 	  node->prev_->next_ = node->next_;
 	  node->next_->prev_ = node->prev_;
+	  node->prev_ = nullptr;
+	  node->next_ = nullptr;
   }
 
   void insertNode(NodePtr node) {
@@ -157,7 +158,7 @@ class LRU : public CachePolicy<Key, Value> {
 
   void cacheLastNode() {
 	  auto node = dummyTail_->prev_;
-	  nodeMap_.erase(node->key());
+	  nodeMap_.erase(node->key_);
 	  removeNode(node);
   }
 
@@ -172,6 +173,97 @@ class LRU : public CachePolicy<Key, Value> {
   NodePtr dummyHead_;        // 虚拟头结点
   NodePtr dummyTail_;        // 虚拟尾结点
   NodeMap nodeMap_;            // 目的：查询 key 的时间复杂度为 O(1)
+};
+
+/**
+ * @brief K-LRU，让高频访问的缓存不容易失效，某个缓存，必须达到 k 次访问次数，才能加入到缓存中
+ * @tparam Key
+ * @tparam Value
+ * @attention 内部维护一个 LRU, Key-Value 为 Key-Count，缓存访问次数（count） >= k 次，从 historyList_ 中移除，加入到缓存中
+ */
+
+template<typename Key, typename Value>
+class KLru : public LRU<Key, Value> {
+ public:
+  explicit KLru(size_t capacity, size_t k)
+	  : LRU<Key, Value>(capacity), k_(k) {}
+
+  ~KLru() = default;
+
+  std::optional<Value> get(Key key) {
+	  int count = historyList_->get(key);
+	  historyList_->put(key, ++count);
+	  return LRU<Key, Value>::get(key);    // 调用父类的 get 方法
+  }
+
+  void put(Key key, Value value) {
+	  // 缓存中存在，更新节点值
+	  if (LRU<Key, Value>::get(key) != std::nullopt) {
+		  LRU<Key, Value>::put(key, value);
+	  }
+	  int count = historyList_->get(key);
+	  historyList_->put(key, ++count);
+	  if (count >= k_) {
+		  // 超过 k 次，从 historyList_ 中移除
+		  historyList_->remove(key);
+		  // 加入到缓存中
+		  LRU<Key, Value>::put(key, value);
+	  }
+  }
+
+ private:
+  size_t k_;
+  std::shared_ptr<LRU<Key, size_t>> historyList_;
+};
+
+template<typename Key, typename Value>
+class MultiLRU {
+  using LRUptr = std::shared_ptr<LRU<Key, Value>>;
+  using PNodeMap = std::unordered_map<Key, std::shared_ptr<LruNode<Key, Value>>>;
+ public:
+  explicit MultiLRU(size_t capacity = 1)
+	  : cache_(std::make_shared<LRU<Key, Value>>(capacity)), pending_(std::make_shared<LRU<Key, Value>>(capacity)) {}
+
+  ~MultiLRU() = default;
+
+  void Print() {
+	  std::cout << "cache_:" << std::endl;
+	  cache_->Print();
+	  std::cout << "================================" << std::endl;
+	  std::cout << "pending_:" << std::endl;
+	  pending_->Print();
+	  std::cout << "================================" << std::endl;
+  }
+
+  void put(Key key, Value value) {
+	  cache_->put(key, value);
+	  pending_->put(key, value);
+  }
+
+  std::optional<Value> get(Key key) {
+	  return cache_->get(key);
+  }
+
+  bool get(Key key, Value &value) {
+	  return cache_->get(key, value);
+  }
+
+  PNodeMap &pending(bool isSwap = true) {
+	  if (isSwap) {
+		  swap();
+	  }
+	  return pending_->nodeMap();
+  }
+
+  void swap() {        // 得加锁
+	  std::lock_guard<std::mutex> _lock(mutex_);
+	  std::swap(cache_, pending_);
+  }
+
+ private:
+  LRUptr cache_;           // 对外提供服务的缓存
+  LRUptr pending_;        // 增量缓存
+  std::mutex mutex_;
 };
 
 }
