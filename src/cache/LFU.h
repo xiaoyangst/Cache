@@ -14,6 +14,7 @@
 #include <memory>
 #include <unordered_map>
 #include <cmath>
+#include <mutex>
 #include <algorithm>
 
 #include "CachePolicy.h"
@@ -24,11 +25,14 @@ template<typename Key, typename Value>
 class LFU;
 template<typename Key, typename Value>
 class FreqList;
+template<typename Key, typename Value>
+class LFUCache;
 
 template<typename Key, typename Value>
 class LfuNode {
   friend class LFU<Key, Value>;
   friend class FreqList<Key, Value>;
+  friend class LFUCache<Key, Value>;
  public:
   LfuNode(Key key, Value value)
 	  : key_(key), value_(value), count_(0), prev_(nullptr), next_(nullptr) {}
@@ -51,7 +55,7 @@ class FreqList {
   using NodeType = LfuNode<Key, Value>;
   using NodePtr = std::shared_ptr<NodeType>;
  public:
-  explicit FreqList(size_t n) : freq_(0) { init(); }
+  explicit FreqList(size_t n) : freq_(n) { init(); }
 
   ~FreqList() {
 	  dummyHead_->next_ = nullptr;
@@ -93,13 +97,19 @@ class FreqList {
 };
 
 template<typename Key, typename Value>
+class MultiLFU;
+
+template<typename Key, typename Value>
 class LFU : public CachePolicy<Key, Value> {
+  friend class LFUCache<Key, Value>;
+  friend class MultiLFU<Key, Value>;
+
   using NodeType = LfuNode<Key, Value>;
   using NodePtr = std::shared_ptr<NodeType>;
   using NodeMap = std::unordered_map<Key, NodePtr>;
   using FreqListMap = std::unordered_map<int, std::shared_ptr<FreqList<Key, Value>>>;
  public:
-  LFU(size_t capacity = 1, int maxAverageNum = 10)
+  explicit LFU(size_t capacity = 1, int maxAverageNum = 10)
 	  : capacity_(capacity)
 		, minFreq_(0)
 		, maxAverageNum_(maxAverageNum)
@@ -233,6 +243,8 @@ class LFU : public CachePolicy<Key, Value> {
 	  }
   }
 
+  NodeMap &nodeMap() { return nodeMap_; }
+
  private:
   size_t capacity_;        // 缓存容量
   int minFreq_;        // 最小访问频次
@@ -243,6 +255,47 @@ class LFU : public CachePolicy<Key, Value> {
   size_t curTotalNum_;    // 当前总访问频次
   NodeMap nodeMap_;
   FreqListMap freqToFreqList_;    // key 为访问频次，value 为对应的链表，记录着相同访问频次的节点
+};
+
+template<typename Key, typename Value>
+class MultiLFU {
+  using LFUptr = std::shared_ptr<LFU<Key, Value>>;
+  using PNodeMap = std::unordered_map<Key, std::shared_ptr<LfuNode<Key, Value>>>;
+ public:
+  explicit MultiLFU(size_t capacity = 1)
+	  : cache_(std::make_shared<LFU<Key, Value>>(capacity)), pending_(std::make_shared<LFU<Key, Value>>(capacity)) {}
+
+  ~MultiLFU() = default;
+
+  void put(Key key, Value value) {
+	  cache_->put(key, value);
+	  pending_->put(key, value);
+  }
+
+  std::optional<Value> get(Key key) {
+	  return cache_->get(key);
+  }
+
+  bool get(Key key, Value &value) {
+	  return cache_->get(key, value);
+  }
+
+  PNodeMap &pending(bool isSwap = true) {
+	  if (isSwap) {
+		  swap();
+	  }
+	  return pending_->nodeMap();
+  }
+
+  void swap() {        // 得加锁
+	  std::lock_guard<std::mutex> _lock(mutex_);
+	  std::swap(cache_, pending_);
+  }
+
+ private:
+  LFUptr cache_;           // 对外提供服务的缓存
+  LFUptr pending_;        // 增量缓存
+  std::mutex mutex_;
 };
 
 }

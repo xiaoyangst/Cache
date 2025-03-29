@@ -71,14 +71,6 @@ class LRU : public CachePolicy<Key, Value> {
 	  dummyTail_->prev_ = nullptr;
   }
 
-  void Print() {
-	  NodePtr cur = dummyHead_->next_;
-	  while (cur != dummyTail_) {
-		  std::cout << "key: " << cur->key() << " value: " << cur->value() << std::endl;
-		  cur = cur->next_;
-	  }
-  }
-
   NodeMap &nodeMap() { return nodeMap_; }
 
   void put(Key key, Value value) override {
@@ -225,15 +217,6 @@ class MultiLRU {
 	  : cache_(std::make_shared<LRU<Key, Value>>(capacity)), pending_(std::make_shared<LRU<Key, Value>>(capacity)) {}
 
   ~MultiLRU() = default;
-
-  void Print() {
-	  std::cout << "cache_:" << std::endl;
-	  cache_->Print();
-	  std::cout << "================================" << std::endl;
-	  std::cout << "pending_:" << std::endl;
-	  pending_->Print();
-	  std::cout << "================================" << std::endl;
-  }
 
   void put(Key key, Value value) {
 	  cache_->put(key, value);

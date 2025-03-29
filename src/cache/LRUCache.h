@@ -29,17 +29,17 @@ namespace Cache {
  * @tparam Value
  */
 template<typename Key, typename Value>
-class Thread {
+class LRUThread {
   using Task = std::function<void()>;
   using LRUptr = std::shared_ptr<LRU<Key, Value>>;
   using PNodeMap = std::unordered_map<Key, std::shared_ptr<LruNode<Key, Value>>>;
  public:
-  Thread(size_t capacity, size_t id_)
+  LRUThread(size_t capacity, size_t id_)
 	  : id_(id_), cache_(std::make_shared<MultiLRU<Key, Value>>(capacity)) {
 	  startThread();
   }
 
-  ~Thread() {
+  ~LRUThread() {
 	  stopThread();
   }
 
@@ -74,12 +74,6 @@ class Thread {
   bool get(Key key, Value &value) {
 	  return cache_->get(key, value);
   }
-
-  void Print() {
-	  std::cout << "Thread id: " << id_ << std::endl;
-	  cache_->Print();
-  }
-
   PNodeMap &pending() {
 	  return cache_->pending();
   }
@@ -134,7 +128,7 @@ class LRUCache {
 		threadNum_(threadNum),
 		mainCache_(std::make_shared<MultiLRU<Key, Value>>(capacity)) {
 	  for (size_t i = 0; i < threadNum_; ++i) {
-		  threads_.push_back(std::make_shared<Thread<Key, Value>>(capacity, i));
+		  threads_.push_back(std::make_shared<LRUThread<Key, Value>>(capacity, i));
 	  }
 
 	  // 开启定时同步
@@ -223,7 +217,7 @@ class LRUCache {
  private:
   std::atomic<size_t> index_;
   const size_t threadNum_;
-  std::vector<std::shared_ptr<Thread<Key, Value>>> threads_;
+  std::vector<std::shared_ptr<LRUThread<Key, Value>>> threads_;
   std::thread syncThread_;
   std::atomic<bool> isSyncing_;
   std::shared_ptr<MultiLRU<Key, Value>> mainCache_;
