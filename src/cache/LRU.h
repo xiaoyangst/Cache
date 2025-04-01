@@ -171,7 +171,6 @@ class LRU : public CachePolicy<Key, Value> {
  * @brief K-LRU，让高频访问的缓存不容易失效，某个缓存，必须达到 k 次访问次数，才能加入到缓存中
  * @tparam Key
  * @tparam Value
- * @attention 内部维护一个 LRU, Key-Value 为 Key-Count，缓存访问次数（count） >= k 次，从 historyList_ 中移除，加入到缓存中
  */
 
 template<typename Key, typename Value>
