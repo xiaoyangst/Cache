@@ -25,18 +25,13 @@ class LRU;
 template<typename Key, typename Value>
 class LRUCache;
 
-/**
- * @brief Node
- * @tparam Key
- * @tparam Value
- */
 template<typename Key, typename Value>
 class LruNode {
   friend class LRU<Key, Value>;
   friend class LRUCache<Key, Value>;
  public:
   LruNode(Key key, Value value)
-	  : key_(key), value_(value), count_(0), prev_(nullptr), next_(nullptr) {}
+	  : key_(key), value_(value), prev_(nullptr), next_(nullptr) {}
 
   ~LruNode() {
 	  prev_ = nullptr;
@@ -46,24 +41,22 @@ class LruNode {
  private:
   Key key_;
   Value value_;
-  size_t count_;    // 缓存被访问次数
   std::shared_ptr<LruNode<Key, Value>> prev_;
   std::shared_ptr<LruNode<Key, Value>> next_;
 };
 
-/**
- * @brief LRU
- * @tparam Key
- * @tparam Value
- */
+template<typename Key, typename Value>
+class KLru;
+
 template<typename Key, typename Value>
 class LRU : public CachePolicy<Key, Value> {
+  friend class KLru<Key, Value>;
  public:
   using NodeType = LruNode<Key, Value>;
   using NodePtr = std::shared_ptr<NodeType>;
   using NodeMap = std::unordered_map<Key, NodePtr>;
 
-  explicit LRU(size_t capacity = 1) : capacity_(capacity) { init(); }
+  explicit LRU(size_t capacity) : capacity_(capacity) { init(); }
 
   ~LRU() {
 	  clearMap();
@@ -74,6 +67,10 @@ class LRU : public CachePolicy<Key, Value> {
   NodeMap &nodeMap() { return nodeMap_; }
 
   void put(Key key, Value value) override {
+	  if (capacity_ <= 0) {
+		  return;
+	  }
+
 	  // 如果存在，更新节点值, 并移到头部
 	  auto it = nodeMap_.find(key);
 	  if (it != nodeMap_.end()) {
@@ -101,17 +98,6 @@ class LRU : public CachePolicy<Key, Value> {
 	  return it->second->value_;
   }
 
-  bool get(Key key, Value &value) override {
-	  auto it = nodeMap_.find(key);
-	  if (it == nodeMap_.end()) {
-		  return false;
-	  }
-	  it->second->count_++;
-	  moveToHead(it->second);
-	  value = it->second->value_;
-	  return true;
-  }
-
  private:
   void init() {
 	  dummyHead_ = std::make_shared<NodeType>(Key(), Value());
@@ -130,11 +116,19 @@ class LRU : public CachePolicy<Key, Value> {
   }
 
   void moveToHead(NodePtr node) {
+	  if (node == nullptr) return;
 	  removeNode(node);
 	  insertNode(node);
   }
 
   void removeNode(NodePtr node) {
+	  if (node == nullptr ||
+		  dummyHead_ == nullptr ||
+		  dummyTail_ == nullptr ||
+		  node->prev_ == nullptr ||
+		  node->next_ == nullptr) {
+		  return;
+	  } // 确保后续访问节的点存在
 	  node->prev_->next_ = node->next_;
 	  node->next_->prev_ = node->prev_;
 	  node->prev_ = nullptr;
@@ -142,6 +136,11 @@ class LRU : public CachePolicy<Key, Value> {
   }
 
   void insertNode(NodePtr node) {
+	  if (node == nullptr ||
+		  dummyHead_ == nullptr ||
+		  dummyTail_ == nullptr) {
+		  return;
+	  } // 确保后续访问节的点存在
 	  node->next_ = dummyHead_->next_;
 	  dummyHead_->next_->prev_ = node;
 	  dummyHead_->next_ = node;
@@ -150,6 +149,7 @@ class LRU : public CachePolicy<Key, Value> {
 
   void cacheLastNode() {
 	  auto node = dummyTail_->prev_;
+	  if (node == dummyHead_) return;    // 说明缓存为空，不应该删除
 	  nodeMap_.erase(node->key_);
 	  removeNode(node);
   }
@@ -176,6 +176,7 @@ class LRU : public CachePolicy<Key, Value> {
 
 template<typename Key, typename Value>
 class KLru : public LRU<Key, Value> {
+  using waitMap = std::unordered_map<Key, std::pair<Value, size_t>>;
  public:
   explicit KLru(size_t capacity, size_t k)
 	  : LRU<Key, Value>(capacity), k_(k) {}
@@ -183,29 +184,39 @@ class KLru : public LRU<Key, Value> {
   ~KLru() = default;
 
   std::optional<Value> get(Key key) {
-	  int count = historyList_->get(key);
-	  historyList_->put(key, ++count);
-	  return LRU<Key, Value>::get(key);    // 调用父类的 get 方法
+	  auto it = waitList.find(key);
+	  if (it != waitList.end()) {
+		  it->second.second++;
+		  if (it->second.second >= k_) {
+			  LRU<Key, Value>::put(key, it->second.first);
+			  waitList.erase(it);
+		  }
+	  }
+	  return LRU<Key, Value>::get(key);
   }
 
   void put(Key key, Value value) {
-	  // 缓存中存在，更新节点值
-	  if (LRU<Key, Value>::get(key) != std::nullopt) {
+	  if (LRU<Key,Value>::get(key) != std::nullopt) {
 		  LRU<Key, Value>::put(key, value);
+		  return;
 	  }
-	  int count = historyList_->get(key);
-	  historyList_->put(key, ++count);
-	  if (count >= k_) {
-		  // 超过 k 次，从 historyList_ 中移除
-		  historyList_->remove(key);
-		  // 加入到缓存中
-		  LRU<Key, Value>::put(key, value);
+
+	  auto it = waitList.find(key);
+	  if (it != waitList.end()) {
+		  it->second.first = value;
+		  it->second.second++;
+		  if (it->second.second >= k_) {
+			  LRU<Key, Value>::put(key, value);
+			  waitList.erase(it);
+		  }
+	  } else {
+		  waitList[key] = std::make_pair(value, 1);
 	  }
   }
 
  private:
   size_t k_;
-  std::shared_ptr<LRU<Key, size_t>> historyList_;
+  waitMap waitList;
 };
 
 template<typename Key, typename Value>
@@ -252,3 +263,5 @@ class MultiLRU {
 }
 
 #endif //CACHE_SRC_CACHE_LRU_H_
+
+

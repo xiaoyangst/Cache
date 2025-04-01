@@ -102,7 +102,7 @@ int main() {
 
 	// testLRU();
 
-	testLFU();
+	 testLFU();
 
 	return 0;
 }

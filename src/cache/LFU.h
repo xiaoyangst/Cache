@@ -35,7 +35,7 @@ class LfuNode {
   friend class LFUCache<Key, Value>;
  public:
   LfuNode(Key key, Value value)
-	  : key_(key), value_(value), count_(0), prev_(nullptr), next_(nullptr) {}
+	  : key_(key), value_(value), count_(1), prev_(nullptr), next_(nullptr) {}
 
   ~LfuNode() {
 	  prev_ = nullptr;
@@ -67,6 +67,12 @@ class FreqList {
   }
 
   void insertNode(NodePtr node) {
+	  if (node == nullptr ||
+		  dummyHead_ == nullptr ||
+		  dummyTail_ == nullptr) {
+		  return;
+	  } // 确保后续访问节的点存在
+
 	  node->next_ = dummyHead_->next_;
 	  dummyHead_->next_->prev_ = node;
 	  dummyHead_->next_ = node;
@@ -74,6 +80,13 @@ class FreqList {
   }
 
   void removeNode(NodePtr node) {
+	  if (node == nullptr ||
+		  dummyHead_ == nullptr ||
+		  dummyTail_ == nullptr ||
+		  node->prev_ == nullptr ||
+		  node->next_ == nullptr) {
+		  return;
+	  } // 确保后续访问节的点存在
 	  node->prev_->next_ = node->next_;
 	  node->next_->prev_ = node->prev_;
 	  node->prev_ = nullptr;
@@ -111,7 +124,7 @@ class LFU : public CachePolicy<Key, Value> {
  public:
   explicit LFU(size_t capacity = 1, int maxAverageNum = 10)
 	  : capacity_(capacity)
-		, minFreq_(0)
+		, minFreq_(1)
 		, maxAverageNum_(maxAverageNum)
 		, curAverageNum_(0)
 		, curTotalNum_(0) {
@@ -142,16 +155,6 @@ class LFU : public CachePolicy<Key, Value> {
 	  return std::nullopt;
   }
 
-  bool get(Key key, Value &value) override {
-	  auto it = nodeMap_.find(key);
-	  if (it != nodeMap_.end()) {
-		  updateNode(it->second);
-		  value = it->second->value_;
-		  return true;
-	  }
-	  return false;
-  }
-
  private:
   void putNode(Key key, Value value) {
 	  // 判断缓存是否已满
@@ -162,7 +165,7 @@ class LFU : public CachePolicy<Key, Value> {
 	  nodeMap_[key] = node;
 	  addToFreqList(node);
 	  addFreqNum();
-	  minFreq_ = std::min(minFreq_, 0);
+	  minFreq_ = 1;
   }
 
   void updateNode(NodePtr node) {
@@ -235,11 +238,14 @@ class LFU : public CachePolicy<Key, Value> {
   }
 
   void updateMinFreq() {
-	  minFreq_ = 0;
+	  minFreq_ = INT8_MAX;
 	  for (const auto &freqItm : freqToFreqList_) {
 		  if (freqItm.second && !freqItm.second->isEmpty()) {
 			  minFreq_ = std::min(minFreq_, freqItm.first);
 		  }
+	  }
+	  if (minFreq_ == INT8_MAX) {
+		  minFreq_ = 1;
 	  }
   }
 
@@ -248,8 +254,6 @@ class LFU : public CachePolicy<Key, Value> {
  private:
   size_t capacity_;        // 缓存容量
   int minFreq_;        // 最小访问频次
-  // 之所以要时刻记录总频率，平均频率等信息，是因为我们用 数组存储频率
-  // 数组的下标就是频率，数组的值就是频率对应的节点个数，为了避免数组过大浪费空间，到一定位置需要进行重新整理
   size_t maxAverageNum_;    // 最大平均访问频次
   size_t curAverageNum_;    // 当前平均访问频次
   size_t curTotalNum_;    // 当前总访问频次

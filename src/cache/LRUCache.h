@@ -74,6 +74,7 @@ class LRUThread {
   bool get(Key key, Value &value) {
 	  return cache_->get(key, value);
   }
+
   PNodeMap &pending() {
 	  return cache_->pending();
   }
@@ -124,9 +125,8 @@ class LRUCache {
   using PNodeMap = std::unordered_map<Key, std::shared_ptr<LruNode<Key, Value>>>;
  public:
   LRUCache(size_t capacity, size_t threadNum, size_t syncInterval = 3)
-	  : index_(0), isSyncing_(true),
-		threadNum_(threadNum),
-		mainCache_(std::make_shared<MultiLRU<Key, Value>>(capacity)) {
+	  : index_(0), isSyncing_(true), threadNum_(threadNum), mainCache_(std::make_shared<MultiLRU<Key,
+																								 Value>>(capacity)) {
 	  for (size_t i = 0; i < threadNum_; ++i) {
 		  threads_.push_back(std::make_shared<LRUThread<Key, Value>>(capacity, i));
 	  }
@@ -147,12 +147,6 @@ class LRUCache {
 	  }
   }
 
-  void Print() {
-	  for (auto &thread_ : threads_) {
-		  thread_->Print();
-	  }
-  }
-
   void put(Key key, Value value, size_t index) {
 	  checkIndex(index);
 	  threads_[index]->commit([this, index, key, value]() {
@@ -168,14 +162,6 @@ class LRUCache {
 	  return future.get();
   }
 
-  bool get(Key key, Value &value, size_t index) {
-	  checkIndex(index);
-	  auto future = threads_[index]->commit([this, index, key, &value]() {
-		return threads_[index]->get(key, value);
-	  });
-	  return future.get();
-  }
-
   void checkIndex(size_t &index) {
 	  if (index >= threadNum_) {
 		  index = selectThread();
@@ -183,9 +169,12 @@ class LRUCache {
   }
 
   void syncCache() {
+	  // 防止特别同步时间太短，导致这边还在同步，就把容器交换，并发出现异常
+	  std::lock_guard<std::mutex> lock_guard(mtx_);
+
 	  // 收集所有子线程的 pending_ 缓存，合并到主缓存
 	  for (const auto &subCache : threads_) {
-		  const PNodeMap &pending = subCache->pending();
+		  const PNodeMap &pending = subCache->pending();	// 内部有加锁
 		  for (const auto &[key, node] : pending) {
 			  mainCache_->put(node->key_, node->value_);
 		  }
@@ -217,6 +206,7 @@ class LRUCache {
  private:
   std::atomic<size_t> index_;
   const size_t threadNum_;
+  std::mutex mtx_;
   std::vector<std::shared_ptr<LRUThread<Key, Value>>> threads_;
   std::thread syncThread_;
   std::atomic<bool> isSyncing_;

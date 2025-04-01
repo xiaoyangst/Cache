@@ -74,33 +74,34 @@ void testEvictionPolicy() {
 	std::cout << "get(3): " << (cache.get(3).value_or("null")) << "\n";
 }
 
-void testGetByReference() {
-	std::cout << "Running testGetByReference...\n";
-	LRU<int, std::string> cache(2);
+void testKLRU(){
+	KLru<int, std::string> cache(2, 3);
+
 	cache.put(1, "one");
-	std::string value;
+	cache.put(2, "two");
 
-	if (cache.get(1, value)) {
-		std::cout << "get(1) by reference: " << value << "\n";
-	} else {
-		std::cout << "get(1) failed\n";
-	}
+	// 查询 1，2 肯定不会有结果
+	std::cout << "get(1): " << (cache.get(1).value_or("null")) << "\n";
+	std::cout << "get(2): " << (cache.get(2).value_or("null")) << "\n";
 
-	if (cache.get(2, value)) {
-		std::cout << "get(2) by reference: " << value << "\n";
-	} else {
-		std::cout << "get(2) failed (expected)\n";
-	}
+	// 前面已经增加 1，2 的查询，应该就可以查到
+	std::cout << "get(1): " << (cache.get(1).value_or("null")) << "\n";
+	std::cout << "get(2): " << (cache.get(2).value_or("null")) << "\n";
+
+	// 继续查询 1
+	cache.put(1, "three");
+	std::cout << "get(1): " << (cache.get(1).value_or("null")) << "\n";
+
+	cache.put(4,"four");
+	std::cout << "get(4): " << (cache.get(4).value_or("null")) << "\n";
+	std::cout << "get(4): " << (cache.get(4).value_or("null")) << "\n";
+
+	std::cout << "get(1): " << (cache.get(1).value_or("null")) << "\n";
+	std::cout << "get(2): " << (cache.get(2).value_or("null")) << "\n";
+
 }
 
 int main() {
-	std::cout << "-------------------" << std::endl;
-	testBasicOperations();
-	std::cout << "-------------------" << std::endl;
-	testEvictionPolicy();
-	std::cout << "-------------------" << std::endl;
-	testGetByReference();
-	std::cout << "-------------------" << std::endl;
-	performanceTest(10000,100000,50000);
+	testKLRU();
 	return 0;
 }

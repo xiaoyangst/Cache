@@ -138,12 +138,6 @@ class LFUCache {
 	  }
   }
 
-  void Print() {
-	  for (auto &thread_ : threads_) {
-		  thread_->Print();
-	  }
-  }
-
   void put(Key key, Value value, size_t index) {
 	  checkIndex(index);
 	  threads_[index]->commit([this, index, key, value]() {
@@ -159,14 +153,6 @@ class LFUCache {
 	  return future.get();
   }
 
-  bool get(Key key, Value &value, size_t index) {
-	  checkIndex(index);
-	  auto future = threads_[index]->commit([this, index, key, &value]() {
-		return threads_[index]->get(key, value);
-	  });
-	  return future.get();
-  }
-
   void checkIndex(size_t &index) {
 	  if (index >= threadNum_) {
 		  index = selectThread();
@@ -174,6 +160,9 @@ class LFUCache {
   }
 
   void syncCache() {
+	  // 防止特别同步时间太短，导致这边还在同步，就把容器交换，并发出现异常
+	  std::lock_guard<std::mutex> lock_guard(mtx_);
+
 	  // 收集所有子线程的 pending_ 缓存，合并到主缓存
 	  for (const auto &subCache : threads_) {
 		  const PNodeMap &pending = subCache->pending();
@@ -208,6 +197,7 @@ class LFUCache {
  private:
   std::atomic<size_t> index_;
   const size_t threadNum_;
+  std::mutex mtx_;
   std::vector<std::shared_ptr<LFUThread<Key, Value>>> threads_;
   std::thread syncThread_;
   std::atomic<bool> isSyncing_;
