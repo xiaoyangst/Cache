@@ -22,22 +22,74 @@ class ArcCache {
 	  : capacity_(capacity)
 		, transformThreshold_(transformThreshold)
 		, arcLRU(std::make_unique<ArcLRU<Key, Value>>(capacity, transformThreshold))
-		, arcLFU(std::make_unique<ArcLFU<Key, Value>>(capacity, transformThreshold)) {
+		, arcLFU(std::make_unique<ArcLFU<Key, Value>>
+					 (capacity, transformThreshold)) {
 
   }
 
   void put(Key key, Value value) {
+	  if (arcLRU->checkEliminate(key)) {
+		  if (arcLFU->decreaseCapacity()) {
+			  arcLRU->increaseCapacity();
+		  }
+		  arcLRU->delEliminateNode(key);
+		  arcLFU->put(key, value);
+	  } else if (arcLFU->checkEliminate(key)) {
+		  if (arcLRU->decreaseCapacity()) {
+			  arcLFU->increaseCapacity();
+		  }
+		  arcLFU->delEliminateNode(key);
+		  arcLFU->put(key, value);
+	  } else {
+		  arcLRU->put(key, value);
+	  }
+
+
+	  /*
 	  auto isEliminate = checkEliminateCaches(key);
 	  if (isEliminate) {    // 在淘汰链表中
+		  arcLRU->put(key, value);
+	  } else {                // 不在淘汰链表中
 		  if (arcLRU->put(key, value)) {
 			  arcLFU->put(key, value);
 		  }
-	  } else {    // 不在淘汰链表中
-		  arcLRU->put(key, value);
 	  }
+	   */
   }
 
   std::optional<Value> get(Key key) {
+	  auto lru = arcLRU->get(key);
+	  if (lru != std::nullopt) {
+		  return lru;
+	  }
+	  auto lfu = arcLFU->get(key);
+	  if (lfu != std::nullopt) {
+		  return lfu;
+	  }
+
+	  // 如果在 LRU 淘汰链表
+	  if (arcLRU->checkEliminate(key)) {
+		  if (arcLFU->decreaseCapacity()) {
+			  arcLRU->increaseCapacity();
+		  }
+		  auto value = arcLRU->delEliminateNode(key);
+		  arcLFU->put(key, value);
+		  return std::nullopt;
+	  }
+
+	  // 如果在 LFU 淘汰链表
+	  if (arcLFU->checkEliminate(key)) {
+		  if (arcLRU->decreaseCapacity()) {
+			  arcLFU->increaseCapacity();
+		  }
+		  auto value = arcLFU->delEliminateNode(key);
+		  arcLFU->put(key, value);
+		  return std::nullopt;
+	  }
+
+	  return std::nullopt;
+
+	  /*
 	  checkEliminateCaches(key);
 	  auto shouldTransform = false;
 	  if (arcLRU->get(key, shouldTransform) != std::nullopt) {
@@ -48,6 +100,7 @@ class ArcCache {
 	  } else {
 		  return arcLFU->get(key);
 	  }
+	   */
   }
 
  private:

@@ -229,5 +229,135 @@ LRUCache 内部是一个线程池，用户可以指定调用哪个 LRUThread 对
 
 ## ArcCache
 
+### LFU 和 LRU缺点分析
 
+| 缓存算法 | 主要问题                                                     | 适用场景                                    |
+| -------- | ------------------------------------------------------------ | ------------------------------------------- |
+| **LFU**  | 旧数据不易淘汰（老化）、新数据容易被淘汰（冷启动）、计算复杂度高 | 适合 **稳定的热点数据**（如数据库索引缓存） |
+| **LRU**  | 短期热点数据占据缓存，无法区分访问频率                       | 适合 **短期访问模式**（如 Web 缓存）        |
 
+**综合考虑**，ARC 结合了 **LRU 和 LFU** 的优点，能够动态适应访问模式，因此比单独的 LRU 或 LFU 更优秀。
+
+###  ARC算法思想
+
+ARC算法的动态分配内存的思想是，在输入重复数据较多时，LFU区域长度增加，存储更多的高频词汇内容；而在多次输入不同的数据时，LRU内存区域增加，存储最近使用内容增多。这样就可以实现内存的动态分配了。
+
+为了判断目前的输入方法更倾向于输入不同的数据还是频繁输入相同数据，我们可以对LRU区域和LFU区域分别建立一个淘汰链表，分别存储 LRU 和 LFU 中被淘汰的元素。
+
+### 动态分配思路
+
+每一次在输入数据时，先检查两个淘汰链表中是否有对应的数据：
+
+如果数据在 LRU 淘汰链表中，说明目前访问元素的方法更接近于访问陌生元素。 此时就会扩大 LRU 区域的空间并将这个元素放入 LRU 表内。
+
+如果数据在 LFU 淘汰链表中出现，说明目前访问方法更多频繁访问某些元素，此时，我们让 LFU 区域的空间增加而让 LRU 区域减小。
+
+```c++
+  bool checkEliminateCaches(Key key) {
+	  auto inEliminate = false;
+	  if (arcLRU->checkEliminate(key)) {
+		  // 说明最近访问的节点（LRU）更重要
+		  // 应该尝试扩容 LRU，缩容 LFU
+		  if (arcLFU->decreaseCapacity()) {
+			  arcLRU->increaseCapacity();
+		  }
+		  inEliminate = true;
+	  } else if (arcLFU->checkEliminate(key)) {
+		  // 说明最近访问的节点（LFU）更重要
+		  // 应该尝试扩容 LFU，缩容 LRU
+		  if (arcLRU->decreaseCapacity()) {
+			  arcLFU->increaseCapacity();
+		  }
+		  inEliminate = true;
+	  }
+
+	  return inEliminate;
+  }
+```
+
+### put 操作
+
+如果 put 的元素在 LRU 的淘汰链表中存在，说明 LRU 缓存被大量访问，导致被淘汰至  LRU 的淘汰链表中：
+
+1. 首先，要对 LRU 进行扩容，对 LFU 进行缩容。
+2. 其次，既然再次被访问说明可能是热点数据，应该从 LRU 的淘汰链表中移除，迁移到 LFU 缓存中。
+
+如果 put 的元素在 LFU 的淘汰链表中存在，说明 LFU 缓存被大量访问，导致被淘汰至  LFU 的淘汰链表中：
+
+1. 首先，要对 LFU 进行扩容，对 LRU 进行缩容。
+2. 其次，既然再次被访问说明可能是热点数据，应该从 LFU 的淘汰链表中移除，迁移到 LFU 缓存中。
+
+如果 LFU 和 LRU 淘汰链表中都没有，那就直接加入到 LRU 中。表面这是新数据，可能只是临时访问。
+
+```c++
+  void put(Key key, Value value) {
+	  if (arcLRU->checkEliminate(key)) {
+		  if (arcLFU->decreaseCapacity()) {
+			  arcLRU->increaseCapacity();
+		  }
+		  arcLRU->delEliminateNode(key);
+		  arcLFU->put(key, value);
+	  } else if (arcLFU->checkEliminate(key)) {
+		  if (arcLRU->decreaseCapacity()) {
+			  arcLFU->increaseCapacity();
+		  }
+		  arcLFU->delEliminateNode(key);
+		  arcLFU->put(key, value);
+	  } else {
+		  arcLRU->put(key, value);
+	  }
+  }
+```
+
+### get 操作
+
+如果在 LRU 和 LFU 缓存命中，那就返回缓存数据。
+
+如果在 LRU 淘汰链表找到记录，可能要晋升为长期缓存，即迁移到 LFU 缓存中：
+
+1. 首先，要对 LRU 进行扩容，对 LFU 进行缩容。
+2. 其次，既然再次被访问说明可能是热点数据，应该从 LRU 的淘汰链表中移除，迁移到 LFU 缓存中。
+3. 返回未命中缓存。
+
+如果在 LFU 淘汰链表找到记录，可能需要长期存储，即迁移到 LFU 缓存中：
+
+1. 首先，要对 LFU 进行扩容，对 LRU 进行缩容。
+2. 其次，既然再次被访问说明可能是热点数据，应该从 LFU 的淘汰链表中移除，迁移到 LFU 缓存中。
+3. 返回未命中缓存。
+
+如果都没有，那就直接返回未命中缓存。
+
+```c++
+  std::optional<Value> get(Key key) {
+	  auto lru = arcLRU->get(key);
+	  if (lru != std::nullopt) {
+		  return lru;
+	  }
+	  auto lfu = arcLFU->get(key);
+	  if (lfu != std::nullopt) {
+		  return lfu;
+	  }
+
+	  // 如果在 LRU 淘汰链表
+	  if (arcLRU->checkEliminate(key)) {
+		  if (arcLFU->decreaseCapacity()) {
+			  arcLRU->increaseCapacity();
+		  }
+		  auto value = arcLRU->delEliminateNode(key);
+		  arcLFU->put(key, value);
+		  return std::nullopt;
+	  }
+
+	  // 如果在 LFU 淘汰链表
+	  if (arcLFU->checkEliminate(key)) {
+		  if (arcLRU->decreaseCapacity()) {
+			  arcLFU->increaseCapacity();
+		  }
+		  auto value = arcLFU->delEliminateNode(key);
+		  arcLFU->put(key, value);
+		  return std::nullopt;
+	  }
+
+	  return std::nullopt;
+  }
+```

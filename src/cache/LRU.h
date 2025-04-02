@@ -31,7 +31,7 @@ class LruNode {
   friend class LRUCache<Key, Value>;
  public:
   LruNode(Key key, Value value)
-	  : key_(key), value_(value), prev_(nullptr), next_(nullptr) {}
+	  : key_(key), value_(value),count_(1),prev_(nullptr), next_(nullptr) {}
 
   ~LruNode() {
 	  prev_ = nullptr;
@@ -41,6 +41,7 @@ class LruNode {
  private:
   Key key_;
   Value value_;
+  size_t count_;
   std::shared_ptr<LruNode<Key, Value>> prev_;
   std::shared_ptr<LruNode<Key, Value>> next_;
 };

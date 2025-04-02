@@ -61,14 +61,25 @@ class ArcLFU {
 	  return true;
   }
 
+  // 检查是否在淘汰链表中
   bool checkEliminate(Key key) {
 	  auto it = eliminateCache_.find(key);
 	  if (it != eliminateCache_.end()) {
-		  removeNode(it->second);
-		  eliminateCache_.erase(it);
 		  return true;
 	  }
 	  return false;
+  }
+
+  // 从淘汰链表中移除
+  Value delEliminateNode(Key key){
+	  auto it = eliminateCache_.find(key);
+	  Value val;
+	  if (it != eliminateCache_.end()) {
+		  val = it->second->value_;
+		  removeNode(it->second);
+		  eliminateCache_.erase(it);
+	  }
+	  return val;
   }
 
  private:
