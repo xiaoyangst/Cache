@@ -19,7 +19,7 @@ void testLRU() {
 	assert(result1.value() == 1);
 
 	std::optional<int> result2 = cache.get("two", 0);
-	assert(result2 == std::nullopt);	// 此时第二个线程中添加的数据还未同步到第一个线程中，第一个线程肯定拿不到数据
+	assert(result2 == std::nullopt);    // 此时第二个线程中添加的数据还未同步到第一个线程中，第一个线程肯定拿不到数据
 
 	// 在第二个线程中获取数据
 	std::optional<int> result3 = cache.get("two", 1);
@@ -27,7 +27,7 @@ void testLRU() {
 	assert(result3.value() == 2);
 
 	std::optional<int> result4 = cache.get("one", 1);
-	assert(result4 == std::nullopt);	// 此时第一个线程中添加的数据还未同步到第二个线程中，第二个线程肯定拿不到数据
+	assert(result4 == std::nullopt);    // 此时第一个线程中添加的数据还未同步到第二个线程中，第二个线程肯定拿不到数据
 
 	std::this_thread::sleep_for(std::chrono::seconds(10));
 
@@ -51,7 +51,7 @@ void testLRU() {
 
 }
 
-void testLFU(){
+void testLFU() {
 	LFUCache<std::string, int> cache(10, 2);
 
 	// 在第一个线程中添加数据
@@ -65,7 +65,7 @@ void testLFU(){
 	assert(result1.value() == 1);
 
 	std::optional<int> result2 = cache.get("two", 0);
-	assert(result2 == std::nullopt);	// 此时第二个线程中添加的数据还未同步到第一个线程中，第一个线程肯定拿不到数据
+	assert(result2 == std::nullopt);    // 此时第二个线程中添加的数据还未同步到第一个线程中，第一个线程肯定拿不到数据
 
 	// 在第二个线程中获取数据
 	std::optional<int> result3 = cache.get("two", 1);
@@ -73,7 +73,7 @@ void testLFU(){
 	assert(result3.value() == 2);
 
 	std::optional<int> result4 = cache.get("one", 1);
-	assert(result4 == std::nullopt);	// 此时第一个线程中添加的数据还未同步到第二个线程中，第二个线程肯定拿不到数据
+	assert(result4 == std::nullopt);    // 此时第一个线程中添加的数据还未同步到第二个线程中，第二个线程肯定拿不到数据
 
 	std::this_thread::sleep_for(std::chrono::seconds(10));
 
@@ -100,9 +100,9 @@ using namespace std;
 
 int main() {
 
-	// testLRU();
+	testLRU();
 
-	 testLFU();
+	testLFU();
 
 	return 0;
 }

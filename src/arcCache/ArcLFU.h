@@ -27,7 +27,8 @@ class ArcLFU {
   explicit ArcLFU(size_t capacity, size_t transformValue)
 	  : capacity_(capacity)
 		, eliminateCapacity_(capacity)
-		, transformValue_(transformValue) {
+		, transformValue_(transformValue)
+		, minFreq_(0) {
 	  init();
   }
 
@@ -71,15 +72,12 @@ class ArcLFU {
   }
 
   // 从淘汰链表中移除
-  Value delEliminateNode(Key key){
+  void delEliminateNode(Key key) {
 	  auto it = eliminateCache_.find(key);
-	  Value val;
 	  if (it != eliminateCache_.end()) {
-		  val = it->second->value_;
 		  removeNode(it->second);
 		  eliminateCache_.erase(it);
 	  }
-	  return val;
   }
 
  private:

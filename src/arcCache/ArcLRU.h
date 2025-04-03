@@ -71,18 +71,13 @@ class ArcLRU {
   }
 
   // 从淘汰链表中移除
-  Value delEliminateNode(Key key) {
+  void delEliminateNode(Key key) {
 	  auto it = eliminateCache_.find(key);
-	  Value val;
 	  if (it != eliminateCache_.end()) {
-		  val = it->second->value_;
 		  removeNode(it->second);
 		  eliminateCache_.erase(it);
 	  }
-	  return val;
   }
-
-
 
  private:
   bool updateNode(NodePtr node, const Value &value) {
@@ -181,7 +176,7 @@ class ArcLRU {
 
   bool updateNodeAccess(NodePtr node) {
 	  moveToFront(node);
-	  node->count_ = 0;    // 重置节点的访问计数
+	  node->count_++;
 	  return node->count_ >= transformValue_;
   }
 

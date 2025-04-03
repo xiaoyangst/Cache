@@ -11,12 +11,13 @@
 #ifndef CACHE_SRC_ARCCACHE_ARCCACHE_H_
 #define CACHE_SRC_ARCCACHE_ARCCACHE_H_
 
+#include "CachePolicy.h"
 #include "ArcLFU.h"
 #include "ArcLRU.h"
 
-namespace Cache {
+namespace Cache{
 template<typename Key, typename Value>
-class ArcCache {
+class ArcCache : public CachePolicy<Key,Value>{
  public:
   explicit ArcCache(size_t capacity, size_t transformThreshold)
 	  : capacity_(capacity)
@@ -43,88 +44,32 @@ class ArcCache {
 	  } else {
 		  arcLRU->put(key, value);
 	  }
-
-
-	  /*
-	  auto isEliminate = checkEliminateCaches(key);
-	  if (isEliminate) {    // 在淘汰链表中
-		  arcLRU->put(key, value);
-	  } else {                // 不在淘汰链表中
-		  if (arcLRU->put(key, value)) {
-			  arcLFU->put(key, value);
-		  }
-	  }
-	   */
   }
 
   std::optional<Value> get(Key key) {
-	  auto lru = arcLRU->get(key);
-	  if (lru != std::nullopt) {
-		  return lru;
-	  }
-	  auto lfu = arcLFU->get(key);
-	  if (lfu != std::nullopt) {
-		  return lfu;
-	  }
 
-	  // 如果在 LRU 淘汰链表
-	  if (arcLRU->checkEliminate(key)) {
+	  if (arcLRU->checkEliminate(key)) {    // 如果在 LRU 淘汰链表
 		  if (arcLFU->decreaseCapacity()) {
 			  arcLRU->increaseCapacity();
 		  }
-		  auto value = arcLRU->delEliminateNode(key);
-		  arcLFU->put(key, value);
-		  return std::nullopt;
-	  }
-
-	  // 如果在 LFU 淘汰链表
-	  if (arcLFU->checkEliminate(key)) {
+		  arcLRU->delEliminateNode(key);
+	  } else if (arcLFU->checkEliminate(key)) {    // 如果在 LFU 淘汰链表
 		  if (arcLRU->decreaseCapacity()) {
 			  arcLFU->increaseCapacity();
 		  }
-		  auto value = arcLFU->delEliminateNode(key);
-		  arcLFU->put(key, value);
-		  return std::nullopt;
+		  arcLFU->delEliminateNode(key);
 	  }
 
-	  return std::nullopt;
-
-	  /*
-	  checkEliminateCaches(key);
 	  auto shouldTransform = false;
-	  if (arcLRU->get(key, shouldTransform) != std::nullopt) {
+	  auto re = arcLRU->get(key, shouldTransform);
+	  if (re != std::nullopt) {
 		  if (shouldTransform) {
-			  arcLFU->put(key, arcLRU->get(key).value());
+			  arcLFU->put(key, re.value());
 		  }
-		  return arcLRU->get(key);
 	  } else {
-		  return arcLFU->get(key);
+		  re = arcLFU->get(key);
 	  }
-	   */
-  }
-
- private:
-  // 检查一个 Key 是否存在于 "Eliminate cache" 中
-  // 并根据访问情况动态调整 LRU（T1）和 LFU（T2）的容量
-  bool checkEliminateCaches(Key key) {
-	  auto inEliminate = false;
-	  if (arcLRU->checkEliminate(key)) {
-		  // 说明最近访问的节点（LRU）更重要
-		  // 应该尝试扩容 LRU，缩容 LFU
-		  if (arcLFU->decreaseCapacity()) {
-			  arcLRU->increaseCapacity();
-		  }
-		  inEliminate = true;
-	  } else if (arcLFU->checkEliminate(key)) {
-		  // 说明最近访问的节点（LFU）更重要
-		  // 应该尝试扩容 LFU，缩容 LRU
-		  if (arcLRU->decreaseCapacity()) {
-			  arcLFU->increaseCapacity();
-		  }
-		  inEliminate = true;
-	  }
-
-	  return inEliminate;
+	  return re;
   }
 
  private:

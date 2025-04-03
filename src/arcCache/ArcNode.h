@@ -36,10 +36,17 @@ class ArcNode {
 		, prev_(nullptr)
 		, next_(nullptr) {}
 
+  ArcNode()
+	  : count_(1)
+		, prev_(nullptr)
+		, next_(nullptr) {}
+
   template<typename K, typename V> friend
   class ArcLRU;
   template<typename K, typename V> friend
   class ArcLFU;
+  template<typename K, typename V> friend
+  class ArcCache;
 };
 }
 

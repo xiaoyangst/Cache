@@ -9,9 +9,9 @@ set(CMAKE_BUILD_TYPE "Debug")
 include_directories(${CMAKE_SOURCE_DIR}/src/cache)
 aux_source_directory(${CMAKE_SOURCE_DIR}/src/cache CACHE_SRC)
 
-add_executable(LFUTest LFUTest.cpp ${CACHE_SRC})
-add_executable(LRUTest LRUTest.cpp ${CACHE_SRC})
-add_executable(LRUCacheTest LRUCacheTest.cpp ${CACHE_SRC})
+include_directories(${CMAKE_SOURCE_DIR}/src/arcCache)
+aux_source_directory(${CMAKE_SOURCE_DIR}/src/arcCache ARC_CACHE_SRC)
 
+add_executable(BaseCacheTest BaseCacheTest.cpp ${CACHE_SRC} ${ARC_CACHE_SRC})
 
-target_link_libraries(LRUCacheTest pthread)
+target_link_libraries(BaseCacheTest pthread)

@@ -329,35 +329,90 @@ ARC算法的动态分配内存的思想是，在输入重复数据较多时，LF
 
 ```c++
   std::optional<Value> get(Key key) {
-	  auto lru = arcLRU->get(key);
-	  if (lru != std::nullopt) {
-		  return lru;
-	  }
-	  auto lfu = arcLFU->get(key);
-	  if (lfu != std::nullopt) {
-		  return lfu;
-	  }
-
-	  // 如果在 LRU 淘汰链表
-	  if (arcLRU->checkEliminate(key)) {
+	  if (arcLRU->checkEliminate(key)) {    // 如果在 LRU 淘汰链表
 		  if (arcLFU->decreaseCapacity()) {
 			  arcLRU->increaseCapacity();
 		  }
-		  auto value = arcLRU->delEliminateNode(key);
-		  arcLFU->put(key, value);
-		  return std::nullopt;
-	  }
-
-	  // 如果在 LFU 淘汰链表
-	  if (arcLFU->checkEliminate(key)) {
+		  arcLRU->delEliminateNode(key);
+	  } else if (arcLFU->checkEliminate(key)) {    // 如果在 LFU 淘汰链表
 		  if (arcLRU->decreaseCapacity()) {
 			  arcLFU->increaseCapacity();
 		  }
-		  auto value = arcLFU->delEliminateNode(key);
-		  arcLFU->put(key, value);
-		  return std::nullopt;
+		  arcLFU->delEliminateNode(key);
 	  }
 
-	  return std::nullopt;
+	  auto shouldTransform = false;
+	  auto re = arcLRU->get(key, shouldTransform);
+	  if (re != std::nullopt) {
+		  if (shouldTransform) {
+			  arcLFU->put(key, re.value());
+		  }
+	  } else {
+		  re = arcLFU->get(key);
+	  }
+	  return re;
   }
 ```
+
+# 测试
+
+## 基础
+
+LRU-LFU-ArcCache
+
+```c++
+=== 缓存测试 1 ===
+capacity 100 operations 10000
+
+=== 测试场景1：热点数据访问测试 ===
+命中率: 67.43% | 访问耗时: 0.00731792 秒
+命中率: 99.21% | 访问耗时: 0.0152188 秒
+命中率: 99.89% | 访问耗时: 0.0220076 秒
+
+=== 测试场景2：循环扫描测试 ===
+命中率: 50.2%
+命中率: 49.87%
+命中率: 49.91%
+
+=== 测试场景3：工作负载剧烈变化测试 ===
+命中率: 68.01%
+命中率: 81.21%
+命中率: 78.92%
+
+=== 缓存测试 2 ===
+capacity 200 operations 20000
+
+=== 测试场景1：热点数据访问测试 ===
+命中率: 66.98% | 访问耗时: 0.0145333 秒
+命中率: 99.525% | 访问耗时: 0.0298758 秒
+命中率: 99.985% | 访问耗时: 0.0440167 秒
+
+=== 测试场景2：循环扫描测试 ===
+命中率: 59.605%
+命中率: 59.59%
+命中率: 59.94%
+
+=== 测试场景3：工作负载剧烈变化测试 ===
+命中率: 80.58%
+命中率: 81.53%
+命中率: 92.0333%
+
+=== 缓存测试 3 ===
+capacity 500 operations 50000
+
+=== 测试场景1：热点数据访问测试 ===
+命中率: 73.17% | 访问耗时: 0.0396718 秒
+命中率: 99.648% | 访问耗时: 0.0812834 秒
+命中率: 99.984% | 访问耗时: 0.113972 秒
+
+=== 测试场景2：循环扫描测试 ===
+命中率: 49.886%
+命中率: 49.97%
+命中率: 49.974%
+
+=== 测试场景3：工作负载剧烈变化测试 ===
+命中率: 86.252%
+命中率: 87.084%
+命中率: 96.654%
+```
+
